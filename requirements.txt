@@ -1,10 +1,7 @@
 # Compliance Advisory & Triage Agent — dependencies
 # Pin versions for reproducibility; update after testing.
 
-# LLM provider (answer generation)
-anthropic==0.30.0
-
-# Ollama client (classification via local llama3.1)
+# Groq API client (HTTP calls via requests — no SDK needed)
 requests==2.32.3
 
 # Vector store (local persistent)
