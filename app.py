@@ -160,13 +160,17 @@ def _render_answer_meta(meta: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    # Citations
-    if citations:
-        st.markdown(
-            "**Citations:** " + " · ".join(f"`{c}`" for c in citations)
-        )
-    else:
-        st.markdown("**Citations:** —")
+    # Citations — only shown when the answer is actually returned to the user.
+    # For routing=escalated and routing=refused, withhold citations entirely:
+    # section titles alone (e.g. "Storing EU Customer Data in the US Region")
+    # can reveal policy conclusions before human review has taken place.
+    if routing in ("answered", "escalated_with_answer"):
+        if citations:
+            st.markdown(
+                "**Citations:** " + " · ".join(f"`{c}`" for c in citations)
+            )
+        else:
+            st.markdown("**Citations:** —")
 
     # Audit ID (small, muted)
     if audit_id:
