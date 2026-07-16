@@ -299,9 +299,20 @@ def parse_classification_response(raw: str) -> dict:
     topic  = parsed.get("topic",  "")
     stakes = parsed.get("stakes", "")
 
-    # Normalise case variations (e.g. "dpo" → "DPO", "High" → "high")
-    topic_normalised  = topic.upper()  if isinstance(topic,  str) else ""
+    # Normalise case variations.
+    # stakes: always lowercase  ("High" → "high")
+    # topic:  match case-insensitively against the canonical set and return
+    #         the canonical form.  Using .upper() broke "Legal" → "LEGAL"
+    #         which is absent from VALID_TOPICS, causing every Legal response
+    #         to silently fall back to {"topic": "Other", "stakes": "high"}.
     stakes_normalised = stakes.lower() if isinstance(stakes, str) else ""
+
+    topic_normalised = ""
+    if isinstance(topic, str):
+        for canonical in VALID_TOPICS:
+            if topic.strip().lower() == canonical.lower():
+                topic_normalised = canonical
+                break
 
     if topic_normalised not in VALID_TOPICS or stakes_normalised not in VALID_STAKES:
         return dict(FALLBACK)

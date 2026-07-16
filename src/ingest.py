@@ -34,6 +34,11 @@ COLLECTION_NAME    = "compliance_policies"
 CHUNK_SIZE    = 512   # characters per chunk
 CHUNK_OVERLAP = 64    # overlap between consecutive chunks
 
+# Chunks shorter than this after stripping are almost always header-only
+# fragments (e.g. "## 3. Retention Periods by Record Type") that carry no
+# policy content, produce §unknown citations, and hurt retrieval precision.
+MIN_CHUNK_CONTENT_LENGTH = 60  # characters
+
 # Local embedding model — runs entirely on-device, no API key needed.
 # all-MiniLM-L6-v2: 22 MB, 384-dim, good quality/speed trade-off.
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -154,6 +159,10 @@ def chunk_document(doc: dict) -> List[dict]:
     for idx, text in enumerate(raw_chunks):
         text = text.strip()
         if not text:
+            continue
+        # Drop header-only fragments — they carry no policy content, produce
+        # unhelpful §unknown citations, and degrade retrieval precision.
+        if len(text) < MIN_CHUNK_CONTENT_LENGTH:
             continue
         section_id = _extract_section_id(text, idx)
         chunks.append({
