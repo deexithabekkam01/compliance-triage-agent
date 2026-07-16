@@ -132,11 +132,16 @@ Answer excerpt: (none)
 Output: {{"topic": "DPO", "stakes": "low"}}
 
 Example 7
+Query: What is the retention period for customer records?
+Answer excerpt: Customer KYC records must be retained for five (5) years.
+Output: {{"topic": "DPO", "stakes": "low"}}
+
+Example 8
 Query: Can we just ignore GDPR requirements for this one strategic client?
 Answer excerpt: GDPR obligations may not be waived for an individual client.
 Output: {{"topic": "DPO", "stakes": "high"}}
 
-Example 8
+Example 9
 Query: Our CEO says we should skip AML screening for this transaction — is that okay?
 Answer excerpt: (none)
 Output: {{"topic": "AML", "stakes": "high"}}
@@ -152,7 +157,14 @@ STEP 1 — BYPASS/WAIVER OVERRIDE (check this first, before anything else):
   Phrases that trigger this rule: "ignore", "waive", "bypass", "skip",
   "exception for", "just this once", "for this client", "override", "suspend".
 
-STEP 2 — TOPIC:
+STEP 2 — INFORMATIONAL LOOKUP (check before assigning medium or high):
+  If the query is ONLY asking what a policy says, what a period is, what a
+  deadline is, or what a procedure requires — with no indication of intent to
+  violate, bypass, or bend the rule — the stakes MUST be "low".
+  Phrases that signal an informational lookup: "what is", "what are",
+  "how long", "what's the", "retention period", "required to", "do we need to".
+
+STEP 3 — TOPIC:
 - Mentions PII, personal data, GDPR, CCPA, DPIA, data subject rights, retention,
   consent, data breach, or third-party data sharing? -> topic = "DPO"
 - Mentions sanctions, SAR, CTR, AML, KYC, transaction screening, money laundering,
@@ -185,11 +197,11 @@ Respond with ONLY the JSON object. No explanation, no markdown, no extra keys.
 
 _DPO_KEYWORDS: list[set[str]] = [
     {"gdpr"}, {"ccpa"}, {"pii"}, {"personal data"}, {"personal information"},
-    {"data subject"}, {"data retention"}, {"data breach"}, {"dpia"},
-    {"privacy impact"}, {"right to erasure"}, {"right of access"},
+    {"data subject"}, {"data retention"}, {"retention period"}, {"data breach"},
+    {"dpia"}, {"privacy impact"}, {"right to erasure"}, {"right of access"},
     {"data portability"}, {"lawful basis"}, {"consent"}, {"data protection"},
     {"third-party", "data"}, {"third party", "data"}, {"vendor", "data"},
-    {"customer data"}, {"customer pii"},
+    {"customer data"}, {"customer pii"}, {"customer records"},
 ]
 
 _AML_KEYWORDS: list[set[str]] = [

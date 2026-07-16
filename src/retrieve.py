@@ -50,13 +50,17 @@ policy excerpts provided below. Do not use any external knowledge.
 
 RULES:
 1. Base every factual claim strictly on the provided excerpts.
-2. Cite the §section ID in square brackets after each claim, e.g. [§data-retention].
-3. If the excerpts contain a clear answer — even a conditional one ("yes, but only
-   if X") — give that answer with citations. Do NOT refuse a answerable question.
-4. ONLY respond with the single word CANNOT_ANSWER (nothing else) if the excerpts
-   contain absolutely no information relevant to the question.
+2. Cite the §section ID shown at the start of each excerpt in square brackets,
+   e.g. [§32-transaction-records]. Copy the §section ID exactly as written —
+   do NOT invent, shorten, or combine section IDs (e.g. do not write §3 when
+   the excerpt is labelled §32-transaction-records).
+3. If the excerpts contain a clear answer — even a conditional one ("yes, but
+   only if X") — give that answer with citations. Do NOT refuse an answerable
+   question.
+4. ONLY respond with the single word CANNOT_ANSWER (nothing else) if the
+   excerpts contain absolutely no information relevant to the question.
 5. After your answer, add a "Citations:" line listing every §section ID used,
-   comma-separated.
+   comma-separated, copying IDs exactly as they appear in the excerpts.
 """
 
 
@@ -155,19 +159,23 @@ def retrieve(query: str, top_k: int = 3) -> list[ChunkMatch]:
 
 def _build_context_block(chunks: list[ChunkMatch]) -> str:
     """
-    Format retrieved chunks into a numbered context block for the LLM prompt.
+    Format retrieved chunks into a labelled context block for the LLM prompt.
+
+    Labels use the form [excerpt-N] rather than bare [N] to prevent the model
+    from conflating numeric excerpt labels with inline §section citation
+    brackets (e.g. confusing [3] as a §3 citation).
 
     Example output:
-        [1] §data-retention  |  data/policies/gdpr_policy.md
+        [excerpt-1] §data-retention  |  data/policies/gdpr_policy.md
         Personal data must not be retained beyond the period necessary…
 
-        [2] §third-party-sharing  |  data/policies/gdpr_policy.md
+        [excerpt-2] §third-party-sharing  |  data/policies/gdpr_policy.md
         Before sharing data with a third party, a data processing agreement…
     """
     lines = []
     for i, chunk in enumerate(chunks, start=1):
         lines.append(
-            f"[{i}] {chunk.section_id}  |  {chunk.source}\n{chunk.text}"
+            f"[excerpt-{i}] {chunk.section_id}  |  {chunk.source}\n{chunk.text}"
         )
     return "\n\n".join(lines)
 
@@ -179,23 +187,30 @@ def _parse_citations(answer_text: str) -> list[str]:
     Handles formats:
         Citations: §data-retention, §third-party-sharing
         Citations: [§data-retention, §third-party-sharing]
+        Citations: §3.2, §3.3
 
     Also extracts inline §citations from the answer body as a fallback.
     Returns a deduplicated list preserving first-seen order.
+
+    Note: the regex includes dots (§3.2, §3.3) so subsection IDs are not
+    truncated to their parent (§3).
     """
+    # §[\w.-]+ captures alphanumeric, underscore, hyphen, AND dot so that
+    # subsection IDs like §3.2 are not truncated to §3.
+    SECTION_RE = re.compile(r"§[\w.-]+")
+
     seen: dict[str, None] = {}
 
-    # 1. Explicit Citations: line
+    # 1. Explicit Citations: line (processed first so order is stable)
     citations_match = re.search(
         r"Citations\s*:\s*(.+)$", answer_text, re.IGNORECASE | re.MULTILINE
     )
     if citations_match:
-        raw = citations_match.group(1)
-        for item in re.findall(r"§[\w-]+", raw):
+        for item in SECTION_RE.findall(citations_match.group(1)):
             seen[item] = None
 
     # 2. Fallback: inline §references anywhere in the answer body
-    for item in re.findall(r"§[\w-]+", answer_text):
+    for item in SECTION_RE.findall(answer_text):
         seen[item] = None
 
     return list(seen.keys())
