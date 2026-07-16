@@ -45,16 +45,18 @@ CONFIDENCE_THRESHOLD  = float(os.getenv("CONFIDENCE_THRESHOLD", "0.35"))
 
 # System prompt — strict grounding, §citation enforcement, explicit no-hallucinate rule.
 ANSWER_SYSTEM_PROMPT = """\
-You are a compliance advisory assistant with access to internal policy documents.
+You are a compliance advisory assistant. Answer questions using ONLY the numbered
+policy excerpts provided below. Do not use any external knowledge.
 
-RULES — follow these exactly, in order:
-1. Answer ONLY using information found in the numbered policy excerpts provided.
-2. For EVERY factual claim, cite the §section ID in square brackets, e.g. [§data-retention].
-3. If the excerpts do not contain enough information to answer the question, you MUST
-   respond with exactly: CANNOT_ANSWER
-   Do NOT fill gaps from your general knowledge. Do NOT guess.
-4. After your answer, include a "Citations:" line listing every §section ID you used,
-   comma-separated, e.g.:  Citations: §data-retention, §third-party-sharing
+RULES:
+1. Base every factual claim strictly on the provided excerpts.
+2. Cite the §section ID in square brackets after each claim, e.g. [§data-retention].
+3. If the excerpts contain a clear answer — even a conditional one ("yes, but only
+   if X") — give that answer with citations. Do NOT refuse a answerable question.
+4. ONLY respond with the single word CANNOT_ANSWER (nothing else) if the excerpts
+   contain absolutely no information relevant to the question.
+5. After your answer, add a "Citations:" line listing every §section ID used,
+   comma-separated.
 """
 
 
@@ -239,16 +241,25 @@ def _generate_answer(
     except (requests.Timeout, requests.HTTPError) as exc:
         return None, [], f"ollama_error:{exc}"
 
-    # Treat CANNOT_ANSWER as a hard no-match regardless of where in the
-    # response it appears — the model sometimes adds preamble before it.
-    if "CANNOT_ANSWER" in raw.upper():
+    # Treat CANNOT_ANSWER as no-match only when the model genuinely cannot
+    # answer — i.e. CANNOT_ANSWER appears at the very start of the response
+    # (possibly after whitespace).  If the model produces a substantive answer
+    # and then hedges with CANNOT_ANSWER somewhere in the body, that is a
+    # partial-answer artefact and should NOT suppress the real answer text.
+    if raw.strip().upper().startswith("CANNOT_ANSWER"):
         return None, [], "cannot_answer"
 
     citations = _parse_citations(raw)
 
-    # Strip the Citations: line from the answer body for cleaner display
+    # Strip the Citations: line from the answer body for cleaner display,
+    # then scrub any residual CANNOT_ANSWER token that the model may have
+    # appended as a hedge after a substantive answer.  This prevents the
+    # token from appearing in the user-facing answer or the audit log.
     answer_body = re.sub(
         r"\n*Citations\s*:.*$", "", raw, flags=re.IGNORECASE | re.DOTALL
+    ).strip()
+    answer_body = re.sub(
+        r"\s*CANNOT_ANSWER\s*", " ", answer_body, flags=re.IGNORECASE
     ).strip()
 
     return answer_body, citations, None
@@ -258,7 +269,7 @@ def _generate_answer(
 # Public interface
 # ---------------------------------------------------------------------------
 
-def answer(query: str, top_k: int = 3) -> AnswerResult:
+def answer(query: str, top_k: int = 5) -> AnswerResult:
     """
     Full retrieval-augmented answer pipeline.
 
@@ -270,7 +281,9 @@ def answer(query: str, top_k: int = 3) -> AnswerResult:
 
     Args:
         query:  The compliance question.
-        top_k:  Number of chunks to retrieve (default 3).
+        top_k:  Number of chunks to retrieve (default 5; gives the LLM
+                enough context when the direct answer sits in a lower-ranked
+                chunk behind header/purpose chunks).
 
     Returns:
         AnswerResult — inspect .answer, .citations, .confidence, .no_match.
